@@ -1,0 +1,20 @@
+export const DEFAULT_WORKFLOW_STEPS = [
+    "Tech Discussion (User)",
+    "Tech Discussion (Vendor)",
+    "Drawing Status",
+    "Drawing Timeline",
+    "BOQ Status",
+    "BOQ Timeline",
+    "Project Approval",
+    "Indent Creation",
+    "PO Status (Material)",
+    "PO Status (Service)",
+    "Material Receiving Timeline",
+    "Purchase Remark",
+    "User Clearance",
+    "Project Timeline",
+    "Project Start Date",
+    "Project Completion Date",
+    "Handover to User",
+    "General Remark"
+];
