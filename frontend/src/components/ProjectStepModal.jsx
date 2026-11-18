@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import EditPlannedDateModal from './EditPlannedDateModal';
-import { markMaterialDone, markStepDone } from '../services/api';
+import { addStepMaterial, markMaterialDone, markStepDone } from '../services/api';
 
 export default function ProjectStepsModal({ project, onClose, onRefresh }) {
   const [editingStep, setEditingStep] = useState(null);
@@ -8,6 +8,9 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
   const [completionRemark, setCompletionRemark] = useState('');
   const [revisionsModalStep, setRevisionsModalStep] = useState(null);
   const [expandedSteps, setExpandedSteps] = useState({});
+  const [materialDraft, setMaterialDraft] = useState({ name: '', date: '' });
+  const [addingMaterial, setAddingMaterial] = useState(false);
+  const [materialError, setMaterialError] = useState('');
 
   // Sync internal steps with incoming project prop
   const [steps, setSteps] = useState(project?.steps || []);
@@ -32,6 +35,24 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
   const handleEditSuccess = async () => {
     await onRefresh(); // Reload main app state
     setEditingStep(null);
+  };
+
+  const handleAddMaterial = async (e, step) => {
+    e.preventDefault();
+    if (!materialDraft.name.trim() || !materialDraft.date) return;
+
+    setAddingMaterial(true);
+    setMaterialError('');
+    try {
+      await addStepMaterial(step.id, materialDraft.name.trim(), materialDraft.date);
+      setMaterialDraft({ name: '', date: '' });
+      setExpandedSteps((prev) => ({ ...prev, [step.id]: true }));
+      await onRefresh();
+    } catch (err) {
+      setMaterialError(err.message);
+    } finally {
+      setAddingMaterial(false);
+    }
   };
 
   // Handle Mark as Done for both Steps and Sub-Step Materials
@@ -128,6 +149,13 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
 
         {/* Steps Table */}
         <div className="flex-1 overflow-y-auto p-6">
+          <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+            <div className="text-sm font-semibold text-indigo-900">Shrinivas: steps 9–11</div>
+            <p className="mt-1 text-xs text-indigo-800">
+              Provide dates for PO Status (Material), PO Status (Service), and Material Receiving Timeline.
+              Use the edit button to schedule steps 9 and 10; add each material and its date under step 11.
+            </p>
+          </div>
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500">
@@ -142,33 +170,53 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
               {steps.map((step) => {
                 const revisionCount = step.revisions ? step.revisions.length : 0;
                 const hasMaterials = step.materials && step.materials.length > 0;
+                const isMaterialTimeline = step.step_name === 'Material Receiving Timeline';
+                const isShrinivasStep = step.step_order >= 9 && step.step_order <= 11;
                 const isExpanded = Boolean(expandedSteps[step.id]);
 
                 return (
                   <React.Fragment key={step.id}>
                     {/* Parent Step Row */}
-                    <tr className="hover:bg-slate-50/50">
-                      <td className="py-3 font-medium text-slate-800">
-                        {hasMaterials && (
+                    <tr className={isShrinivasStep && !step.is_na ? 'bg-indigo-50/50' : step.is_na || !step.planned_date ? 'bg-slate-50' : 'hover:bg-slate-50/50'}>
+                      <td className={`py-3 font-medium ${step.is_na ? 'text-slate-400' : isShrinivasStep ? 'text-indigo-900' : !step.planned_date ? 'text-slate-400' : 'text-slate-800'}`}>
+                        {(hasMaterials || isMaterialTimeline) && (
                           <button
                             onClick={() => toggleExpandStep(step.id)}
+                            aria-label={`${isExpanded ? 'Hide' : 'Show'} materials for ${step.step_name}`}
                             className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-[10px] font-bold text-indigo-600 hover:bg-indigo-50"
                           >
                             {isExpanded ? '▼' : '►'}
                           </button>
                         )}
-                        {step.step_name}
+                        <div>{step.step_name}</div>
+                        <div className={`mt-1 text-[10px] font-semibold ${isShrinivasStep ? 'text-indigo-700' : 'font-normal text-slate-400'}`}>
+                          {isShrinivasStep ? 'Shrinivas · assigned task' : 'Responsible: Dilip / Mangesh'}
+                        </div>
+                        {step.contact_email && (
+                          <div className="mt-1 text-[10px] font-normal text-indigo-600">
+                            Contact: {step.contact_email}
+                          </div>
+                        )}
                         {hasMaterials && (
                           <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600">
                             {step.materials.length} Materials
                           </span>
                         )}
+                        {isMaterialTimeline && !hasMaterials && (
+                          <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                            Add material dates
+                          </span>
+                        )}
                       </td>
-                      <td className="py-3 font-mono text-slate-600">
-                        {step.planned_date}
+                      <td className={`py-3 font-mono ${step.is_na || !step.planned_date ? 'text-slate-400' : 'text-slate-600'}`}>
+                        {step.is_na ? (
+                          <span className="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500">N/A</span>
+                        ) : step.planned_date || <span className="font-sans text-[10px]">Not scheduled</span>}
                       </td>
                       <td className="py-3 font-mono">
-                        {step.is_completed ? (
+                        {step.is_na ? (
+                          <span className="text-slate-400">N/A</span>
+                        ) : step.is_completed ? (
                           <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
                             ✓ {step.actual_completion_date}
                           </span>
@@ -189,7 +237,7 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
                         )}
                       </td>
                       <td className="py-3 text-right space-x-2">
-                        {!step.is_completed && (
+                        {!step.is_completed && !step.is_na && (
                           <button
                             onClick={() =>
                               setCompletingItem({ type: 'step', item: step })
@@ -202,10 +250,10 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
 
                         <button
                           onClick={() => setEditingStep(step)}
-                          title="Edit Planned Date"
-                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-indigo-600"
+                          title={step.planned_date && !step.is_na ? 'Edit Planned Date' : 'Set Planned Date'}
+                          className={`rounded px-2 py-1 text-[10px] font-semibold ${!step.planned_date && !step.is_na ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600'}`}
                         >
-                          ✏️
+                          {step.planned_date && !step.is_na ? '✏️' : 'Set Date'}
                         </button>
 
                         <button
@@ -217,6 +265,46 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
                         </button>
                       </td>
                     </tr>
+
+                    {isMaterialTimeline && isExpanded && !step.is_na && (
+                      <tr className="border-l-2 border-indigo-400 bg-indigo-50/20">
+                        <td colSpan={5} className="px-4 py-3">
+                          <form onSubmit={(e) => handleAddMaterial(e, step)} className="flex flex-wrap items-end gap-2">
+                            <label className="min-w-40 flex-1 text-[10px] font-semibold text-slate-600">
+                              Material name
+                              <input
+                                type="text"
+                                required
+                                value={materialDraft.name}
+                                onChange={(e) => setMaterialDraft((draft) => ({ ...draft, name: e.target.value }))}
+                                placeholder="Enter material"
+                                className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                              />
+                            </label>
+                            <label className="text-[10px] font-semibold text-slate-600">
+                              Planned date
+                              <input
+                                type="date"
+                                required
+                                value={materialDraft.date}
+                                onChange={(e) => setMaterialDraft((draft) => ({ ...draft, date: e.target.value }))}
+                                className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                              />
+                            </label>
+                            <button
+                              type="submit"
+                              disabled={addingMaterial || !materialDraft.name.trim() || !materialDraft.date}
+                              className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                              {addingMaterial ? 'Adding...' : '+ Add Material'}
+                            </button>
+                          </form>
+                          {materialError && (
+                            <p role="alert" className="mt-2 text-xs text-rose-600">{materialError}</p>
+                          )}
+                        </td>
+                      </tr>
+                    )}
 
                     {/* Collapsible Child Material Sub-Rows */}
                     {hasMaterials &&
@@ -348,7 +436,7 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
                 >
                   <div className="flex items-center justify-between font-mono font-medium text-slate-700">
                     <span>
-                      {rev.old_planned_date} ➔ {rev.new_planned_date}
+                      {rev.old_planned_date || 'N/A'} ➔ {rev.new_planned_date}
                     </span>
                     <span className="text-[10px] text-slate-400">
                       {new Date(rev.created_at).toLocaleDateString()}

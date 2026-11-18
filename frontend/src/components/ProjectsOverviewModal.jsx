@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
+import ProgressTrackerPanel from './ProgressTrackerModal';
 
 export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }) {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [selectedPlant, setSelectedPlant] = useState('All');
     const [selectedOwner, setSelectedOwner] = useState('All');
+    const [activeTab, setActiveTab] = useState('overview');
 
     // Extract unique plants and owners for filter dropdowns
     const uniquePlants = Array.from(
@@ -70,7 +72,7 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
     filteredProjects.forEach((p) => {
         const steps = p.steps || [];
         const totalSteps = steps.length;
-        const completedSteps = steps.filter((s) => s.is_completed).length;
+        const completedSteps = steps.filter((s) => s.is_completed || s.is_na).length;
         const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
         totalWorkDonePercentSum += progress;
 
@@ -82,7 +84,7 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
         }
 
         // Check if any step is delayed (not completed and planned date < today)
-        const hasDelayedStep = steps.some((s) => !s.is_completed && s.planned_date < todayStr);
+        const hasDelayedStep = steps.some((s) => !s.is_na && !s.is_completed && s.planned_date && s.planned_date < todayStr);
         if (hasDelayedStep) {
             delayedProjectsCount++;
         }
@@ -117,7 +119,37 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
 
                 {/* Modal Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    <div className="flex gap-2 border-b border-slate-200" role="tablist" aria-label="Project dashboard views">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeTab === 'overview'}
+                            onClick={() => setActiveTab('overview')}
+                            className={`border-b-2 px-4 py-2 text-sm font-semibold ${
+                                activeTab === 'overview'
+                                    ? 'border-indigo-600 text-indigo-700'
+                                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            Overview
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeTab === 'progress'}
+                            onClick={() => setActiveTab('progress')}
+                            className={`border-b-2 px-4 py-2 text-sm font-semibold ${
+                                activeTab === 'progress'
+                                    ? 'border-indigo-600 text-indigo-700'
+                                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            Progress Tracker
+                        </button>
+                    </div>
 
+                    {activeTab === 'overview' ? (
+                    <>
                     {/* Filter Bar */}
                     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm text-xs">
                         <div>
@@ -377,7 +409,6 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
                                 </div>
                             </div>
                         </div>
-
                     </div>
 
                     {/* Work % by Owner Section */}
@@ -397,7 +428,7 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
                                     ownerProjects.forEach((p) => {
                                         (p.steps || []).forEach((s) => {
                                             ownerTotalSteps++;
-                                            if (s.is_completed) ownerCompletedSteps++;
+                                            if (s.is_completed || s.is_na) ownerCompletedSteps++;
                                         });
                                     });
 
@@ -427,6 +458,10 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
                         </div>
                     </div>
 
+                    </>
+                    ) : (
+                        <ProgressTrackerPanel projects={projects} />
+                    )}
                 </div>
             </div>
         </div>

@@ -4,7 +4,7 @@ from typing import List
 from app.database import get_db
 from app.modules.projects.schemas import (
     ProjectCreate, ProjectResponse, ProjectStepResponse, 
-    UpdatePlannedDateSchema, MarkStepDoneSchema, StepMaterialResponse
+    UpdatePlannedDateSchema, MarkStepDoneSchema, StepMaterialCreate, StepMaterialResponse
 )
 from app.modules.projects import service
 
@@ -21,6 +21,14 @@ def create_project(project_in: ProjectCreate, db: Session = Depends(get_db)):
 @router.patch("/steps/{step_id}/planned-date", response_model=ProjectStepResponse)
 def update_planned_date(step_id: int, payload: UpdatePlannedDateSchema, db: Session = Depends(get_db)):
     return service.update_step_planned_date(db=db, step_id=step_id, payload=payload)
+
+@router.post(
+    "/steps/{step_id}/materials",
+    response_model=StepMaterialResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_step_material(step_id: int, payload: StepMaterialCreate, db: Session = Depends(get_db)):
+    return service.add_step_material(db=db, step_id=step_id, payload=payload)
 
 @router.patch("/steps/{step_id}/mark-done", response_model=ProjectStepResponse)
 def mark_done(step_id: int, payload: MarkStepDoneSchema, db: Session = Depends(get_db)):

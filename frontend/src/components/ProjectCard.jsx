@@ -4,7 +4,7 @@ export default function ProjectCard({ project, onClick, onDelete }) {
     // Dynamically calculate completed steps based on step.is_completed
     const steps = project.steps || [];
     const totalSteps = steps.length;
-    const completedSteps = steps.filter((step) => step.is_completed).length;
+    const completedSteps = steps.filter((step) => step.is_completed || step.is_na).length;
     const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
     const plantDisplay =

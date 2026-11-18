@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 from datetime import date, datetime
 from app.core.constants import PlantType
@@ -28,13 +28,28 @@ class ProjectResponse(BaseModel):
         from_attributes = True
 
 class UpdatePlannedDateSchema(BaseModel):
-    new_planned_date: date
-    reason: str
+    new_planned_date: Optional[date] = None
+    reason: Optional[str] = None
+    contact_email: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_update(self):
+        if not self.model_fields_set.intersection({"new_planned_date", "contact_email"}):
+            raise ValueError("Provide a planned date or contact email to update")
+        return self
 
     
 class StepMaterialCreate(BaseModel):
     material_name: str
     planned_date: date
+
+    @field_validator("material_name")
+    @classmethod
+    def validate_material_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Material name cannot be empty")
+        return value
 
 class StepMaterialResponse(BaseModel):
     id: int
@@ -49,7 +64,7 @@ class StepMaterialResponse(BaseModel):
 
 class StepRevisionLogResponse(BaseModel):
     id: int
-    old_planned_date: date
+    old_planned_date: Optional[date] = None
     new_planned_date: date
     reason: str
     created_at: datetime
@@ -60,14 +75,26 @@ class StepRevisionLogResponse(BaseModel):
 class InitialStepCreate(BaseModel):
     step_name: str
     step_order: int
-    planned_date: date
+    planned_date: Optional[date] = None
+    contact_email: Optional[str] = None
+    is_na: bool = False
     materials: Optional[List[StepMaterialCreate]] = []
+
+    @model_validator(mode="after")
+    def validate_schedule(self):
+        if self.is_na and self.planned_date is not None:
+            raise ValueError("An N/A step cannot have a planned date")
+        if self.is_na and self.materials:
+            raise ValueError("An N/A step cannot have materials")
+        return self
 
 class ProjectStepResponse(BaseModel):
     id: int
     step_name: str
     step_order: int
-    planned_date: date
+    planned_date: Optional[date] = None
+    contact_email: Optional[str] = None
+    is_na: bool = False
     actual_completion_date: Optional[date] = None
     is_completed: bool
     completion_remark: Optional[str] = None
