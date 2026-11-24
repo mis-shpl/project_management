@@ -10,9 +10,10 @@ class Project(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     project_date = Column(Date, nullable=False)
+    plant = Column(String(50), nullable=False)       # Location: HO or Factory
+    plant_custom_name = Column(String(100), nullable=True)
     category = Column(String(100), nullable=False)  # Department
-    plant = Column(String(50), nullable=False)       # HO, Factory, Other
-    plant_custom_name = Column(String(100), nullable=True)  # Filled if plant == 'Other'
+    categories = Column(Text, nullable=True)
     owner = Column(String(150), nullable=False)      # Project Owner
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -26,6 +27,7 @@ class ProjectStep(Base):
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     step_name = Column(String, nullable=False)
     step_order = Column(Integer, nullable=False)
+    start_date = Column(Date, nullable=True)
     planned_date = Column(Date, nullable=True)
     contact_email = Column(String, nullable=True)
     is_na = Column(Boolean, nullable=False, default=False)
@@ -44,7 +46,8 @@ class StepMaterial(Base):
     id = Column(Integer, primary_key=True, index=True)
     step_id = Column(Integer, ForeignKey("project_steps.id", ondelete="CASCADE"), nullable=False)
     material_name = Column(String, nullable=False)
-    planned_date = Column(Date, nullable=False)
+    start_date = Column(Date, nullable=True)
+    planned_date = Column(Date, nullable=True)
     actual_completion_date = Column(Date, nullable=True)
     is_completed = Column(Boolean, default=True)
     completion_remark = Column(String, nullable=True)

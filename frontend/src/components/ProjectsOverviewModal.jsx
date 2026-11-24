@@ -1,12 +1,248 @@
 import React, { useState, useMemo } from 'react';
 import ProgressTrackerPanel from './ProgressTrackerModal';
 
+function getMetricLabel(metric) {
+    const labels = {
+        total: 'Total Projects',
+        completed: 'Completed Projects',
+        pending: 'Pending / Active Projects',
+        delayed: 'Projects With Delayed Steps',
+        average: 'Projects by Work Done',
+    };
+    return labels[metric];
+}
+
+function getCurrentPendingStep(project) {
+    const orderedSteps = [...(project.steps || [])].sort((a, b) => a.step_order - b.step_order);
+    const lastCompletedIndex = orderedSteps.reduce(
+        (lastIndex, step, index) => (step.is_completed ? index : lastIndex),
+        -1
+    );
+
+    return (
+        orderedSteps
+            .slice(lastCompletedIndex + 1)
+            .find((step) => !step.is_completed && !step.is_na) || null
+    );
+}
+
+function toDateNumber(value) {
+    if (!value) return null;
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function GanttPanel({ projects = [] }) {
+    const [selectedProjectId, setSelectedProjectId] = useState('');
+    const [scale, setScale] = useState('day');
+    const [materialsExpanded, setMaterialsExpanded] = useState(true);
+
+    const selectedProject = projects.find((project) => String(project.id) === String(selectedProjectId))
+        || projects[0]
+        || null;
+
+    const projectStart = selectedProject?.project_date || '';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+
+    const items = (selectedProject?.steps || []).filter((step) => !step.is_na);
+    const materials = items.flatMap((step) =>
+        (step.materials || []).map((material) => ({ ...material, stepName: step.step_name }))
+    );
+    const dates = [
+        toDateNumber(projectStart),
+        ...items.flatMap((step) => [toDateNumber(step.start_date), toDateNumber(step.planned_date)]),
+        ...materials.flatMap((material) => [toDateNumber(material.start_date), toDateNumber(material.planned_date)]),
+    ].filter((value) => value !== null);
+
+    const startMs = dates.length ? Math.min(...dates) : today.getTime();
+    const endMs = dates.length ? Math.max(...dates, today.getTime()) : today.getTime();
+    const startDate = new Date(startMs);
+    const endDate = new Date(Math.max(endMs, startMs));
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setDate(endDate.getDate() + 14);
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const totalDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / dayMs));
+    const pixelsPerDay = scale === 'day' ? 24 : 14;
+    const timelineWidth = totalDays * pixelsPerDay;
+    const offsetForDate = (value, fallback = projectStart) => {
+        const ms = toDateNumber(value) || toDateNumber(fallback);
+        if (ms === null) return 0;
+        return Math.max(0, Math.min(timelineWidth, ((ms - startDate.getTime()) / dayMs) * pixelsPerDay));
+    };
+    const todayOffset = offsetForDate(todayStr);
+
+    const getBarStyle = (item, isMaterial = false) => {
+        const start = item.start_date || (!isMaterial ? projectStart : projectStart);
+        const planned = item.planned_date;
+        const startOffset = offsetForDate(start);
+        const endOffset = planned ? offsetForDate(planned) : startOffset + pixelsPerDay;
+        const width = Math.max(pixelsPerDay, endOffset - startOffset);
+        let color = 'bg-slate-400';
+
+        if (item.is_completed) {
+            color = item.actual_completion_date && planned && item.actual_completion_date > planned
+                ? 'bg-rose-500'
+                : 'bg-emerald-500';
+        } else if (planned && planned < todayStr) {
+            color = 'bg-rose-500';
+        } else if (start && start <= todayStr && (!planned || planned >= todayStr)) {
+            color = 'bg-amber-500';
+        }
+
+        return { left: startOffset, width, color };
+    };
+
+    const headerItems = [];
+    if (scale === 'day') {
+        for (let i = 0; i < totalDays; i += 1) {
+            const date = new Date(startDate.getTime() + i * dayMs);
+            headerItems.push(date);
+        }
+    } else {
+        for (let i = 0; i < totalDays; i += 7) {
+            headerItems.push(new Date(startDate.getTime() + i * dayMs));
+        }
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Project</label>
+                    <select
+                        value={selectedProject?.id || ''}
+                        onChange={(e) => setSelectedProjectId(e.target.value)}
+                        className="mt-1 min-w-64 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700"
+                    >
+                        {projects.map((project) => (
+                            <option key={project.id} value={project.id}>{project.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <div className="flex rounded-lg border border-slate-200 p-1">
+                    {['day', 'week'].map((option) => (
+                        <button
+                            key={option}
+                            type="button"
+                            onClick={() => setScale(option)}
+                            className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize cursor-pointer ${
+                                scale === option ? 'bg-indigo-600 text-white' : 'text-slate-500'
+                            }`}
+                        >
+                            {option}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {!selectedProject ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+                    No projects available.
+                </div>
+            ) : (
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <div className="overflow-x-auto">
+                        <div style={{ minWidth: 260 + timelineWidth }}>
+                            <div className="flex border-b border-slate-200">
+                                <div className="sticky left-0 z-30 w-[260px] shrink-0 border-r border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-600">
+                                    Timeline
+                                </div>
+                                <div className="relative h-12 shrink-0" style={{ width: timelineWidth }}>
+                                    <div
+                                        className="absolute top-0 z-10 h-full border-l-2 border-dashed border-rose-400"
+                                        style={{ left: todayOffset }}
+                                    />
+                                    {headerItems.map((date, index) => {
+                                        const left = index * (scale === 'day' ? pixelsPerDay : 7 * pixelsPerDay);
+                                        return (
+                                            <div
+                                                key={date.toISOString()}
+                                                className="absolute top-0 h-full border-l border-slate-200 px-1 pt-3 text-[10px] text-slate-500"
+                                                style={{ left, width: scale === 'day' ? pixelsPerDay : 7 * pixelsPerDay }}
+                                            >
+                                                {scale === 'day'
+                                                    ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                                    : `Wk ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {items.map((step) => {
+                                const bar = getBarStyle(step);
+                                return (
+                                    <div key={step.id} className="relative flex border-b border-slate-100">
+                                        <div className="sticky left-0 z-20 w-[260px] shrink-0 border-r border-slate-200 bg-white px-4 py-3">
+                                            <div className="truncate text-xs font-semibold text-slate-700">{step.step_name}</div>
+                                            <div className="mt-1 text-[10px] text-slate-400">
+                                                {step.start_date || 'Unassigned'} → {step.planned_date || 'No end'}
+                                            </div>
+                                        </div>
+                                        <div className="relative h-14 shrink-0" style={{ width: timelineWidth }}>
+                                            <div className="absolute top-0 z-10 h-full border-l-2 border-dashed border-rose-400" style={{ left: todayOffset }} />
+                                            <div
+                                                className={`absolute top-4 h-6 rounded-md ${bar.color} shadow-sm`}
+                                                style={{ left: bar.left, width: bar.width }}
+                                                title={`${step.step_name}: ${step.start_date || projectStart} to ${step.planned_date || 'not scheduled'}`}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {materials.length > 0 && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setMaterialsExpanded((expanded) => !expanded)}
+                                        className="flex w-full items-center gap-2 border-b border-indigo-100 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700"
+                                    >
+                                        <span>{materialsExpanded ? '▾' : '▸'}</span>
+                                        Material Receiving Timeline
+                                    </button>
+                                    {materialsExpanded && materials.map((material) => {
+                                        const bar = getBarStyle(material, true);
+                                        return (
+                                            <div key={material.id} className="relative flex border-b border-slate-100">
+                                                <div className="sticky left-0 z-20 w-[260px] shrink-0 border-r border-slate-200 bg-slate-50 px-7 py-3">
+                                                    <div className="truncate text-xs font-medium text-slate-700">{material.material_name}</div>
+                                                    <div className="mt-1 text-[10px] text-slate-400">
+                                                        {material.start_date || 'Unassigned'} → {material.planned_date || 'No end'}
+                                                    </div>
+                                                </div>
+                                                <div className="relative h-12 shrink-0" style={{ width: timelineWidth }}>
+                                                    <div className="absolute top-0 z-10 h-full border-l-2 border-dashed border-rose-400" style={{ left: todayOffset }} />
+                                                    <div
+                                                        className={`absolute top-3 h-5 rounded-md ${bar.color} shadow-sm`}
+                                                        style={{ left: bar.left, width: bar.width }}
+                                                        title={`${material.material_name}: ${material.start_date || projectStart} to ${material.planned_date || 'not scheduled'}`}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    <div className="pointer-events-none absolute z-40 hidden" />
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }) {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [selectedPlant, setSelectedPlant] = useState('All');
     const [selectedOwner, setSelectedOwner] = useState('All');
     const [activeTab, setActiveTab] = useState('overview');
+    const [selectedOverviewMetric, setSelectedOverviewMetric] = useState(null);
 
     // Extract unique plants and owners for filter dropdowns
     const uniquePlants = Array.from(
@@ -61,47 +297,43 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
     // Calculate Metrics
     const todayStr = new Date().toISOString().split('T')[0];
 
-    let totalProjects = filteredProjects.length;
-    let completedProjects = 0;
-    let pendingProjects = 0;
-    let delayedProjectsCount = 0;
-    let totalWorkDonePercentSum = 0;
-
-    const plantCounts = {};
-
-    filteredProjects.forEach((p) => {
-        const steps = p.steps || [];
+    const projectMetrics = filteredProjects.map((project) => {
+        const steps = project.steps || [];
         const totalSteps = steps.length;
-        const completedSteps = steps.filter((s) => s.is_completed || s.is_na).length;
-        const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
-        totalWorkDonePercentSum += progress;
+        const completedSteps = steps.filter((step) => step.is_completed || step.is_na).length;
 
-        const isFullyCompleted = totalSteps > 0 && completedSteps === totalSteps;
-        if (isFullyCompleted) {
-            completedProjects++;
-        } else {
-            pendingProjects++;
-        }
-
-        // Check if any step is delayed (not completed and planned date < today)
-        const hasDelayedStep = steps.some((s) => !s.is_na && !s.is_completed && s.planned_date && s.planned_date < todayStr);
-        if (hasDelayedStep) {
-            delayedProjectsCount++;
-        }
-
-        // Plant distribution
-        const plantKey = p.plant === 'Other' ? p.plant_custom_name || 'Other' : p.plant || 'Not Set';
-        plantCounts[plantKey] = (plantCounts[plantKey] || 0) + 1;
+        return {
+            project,
+            progress: totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0,
+            isFullyCompleted: totalSteps > 0 && completedSteps === totalSteps,
+            hasDelayedStep: steps.some(
+                (step) =>
+                    !step.is_na &&
+                    !step.is_completed &&
+                    step.planned_date &&
+                    step.planned_date < todayStr
+            ),
+        };
     });
 
+    const totalProjects = projectMetrics.length;
+    const completedProjects = projectMetrics.filter((metric) => metric.isFullyCompleted).length;
+    const pendingProjects = totalProjects - completedProjects;
+    const delayedProjectsCount = projectMetrics.filter((metric) => metric.hasDelayedStep).length;
+    const totalWorkDonePercentSum = projectMetrics.reduce((sum, metric) => sum + metric.progress, 0);
     const avgWorkDone = totalProjects > 0 ? Math.round(totalWorkDonePercentSum / totalProjects) : 0;
-
-    // Status breakdown numbers
-    const onTrackProjects = Math.max(0, pendingProjects - delayedProjectsCount);
+    const selectedMetricProjects = projectMetrics
+        .filter((metric) => {
+            if (selectedOverviewMetric === 'completed') return metric.isFullyCompleted;
+            if (selectedOverviewMetric === 'pending') return !metric.isFullyCompleted;
+            if (selectedOverviewMetric === 'delayed') return metric.hasDelayedStep;
+            return true;
+        })
+        .map((metric) => metric.project);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
-            <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-2xl bg-slate-100 shadow-2xl overflow-hidden">
+            <div className="flex h-[92vh] w-full max-w-6xl flex-col rounded-2xl bg-slate-100 shadow-2xl overflow-hidden">
 
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
@@ -125,7 +357,7 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
                             role="tab"
                             aria-selected={activeTab === 'overview'}
                             onClick={() => setActiveTab('overview')}
-                            className={`border-b-2 px-4 py-2 text-sm font-semibold ${
+                            className={`border-b-2 px-4 py-2 text-sm font-semibold cursor-pointer ${
                                 activeTab === 'overview'
                                     ? 'border-indigo-600 text-indigo-700'
                                     : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -138,13 +370,26 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
                             role="tab"
                             aria-selected={activeTab === 'progress'}
                             onClick={() => setActiveTab('progress')}
-                            className={`border-b-2 px-4 py-2 text-sm font-semibold ${
+                            className={`border-b-2 px-4 py-2 text-sm font-semibold cursor-pointer ${
                                 activeTab === 'progress'
                                     ? 'border-indigo-600 text-indigo-700'
                                     : 'border-transparent text-slate-500 hover:text-slate-700'
                             }`}
                         >
-                            Progress Tracker
+                            Project-wise Tracker
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeTab === 'gantt'}
+                            onClick={() => setActiveTab('gantt')}
+                            className={`border-b-2 px-4 py-2 text-sm font-semibold cursor-pointer ${
+                                activeTab === 'gantt'
+                                    ? 'border-indigo-600 text-indigo-700'
+                                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            Project Timeline
                         </button>
                     </div>
 
@@ -178,14 +423,14 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
 
                         <div>
                             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                                Plant
+                                Location
                             </label>
                             <select
                                 value={selectedPlant}
                                 onChange={(e) => setSelectedPlant(e.target.value)}
                                 className="rounded-lg border border-slate-200 p-1.5 text-xs text-slate-700 bg-white min-w-[110px]"
                             >
-                                <option value="All">All Plants</option>
+                                <option value="All">All Locations</option>
                                 {uniquePlants.map((plant) => (
                                     <option key={plant} value={plant}>
                                         {plant}
@@ -255,161 +500,145 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
                     {/* Metric Cards Banner */}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
                         {/* Total Projects */}
-                        <div className="rounded-2xl bg-sky-500 p-4 text-white shadow-sm">
+                        <button
+                            type="button"
+                            aria-pressed={selectedOverviewMetric === 'total'}
+                            onClick={() => setSelectedOverviewMetric((selected) => selected === 'total' ? null : 'total')}
+                            className="cursor-pointer rounded-2xl bg-sky-500 p-4 text-left text-white shadow-sm hover:brightness-95 focus:outline-none"
+                        >
                             <div className="text-3xl font-extrabold">{totalProjects}</div>
                             <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-90">
                                 Total Projects
                             </div>
-                        </div>
+                        </button>
 
                         {/* Completed */}
-                        <div className="rounded-2xl bg-emerald-500 p-4 text-white shadow-sm">
+                        <button
+                            type="button"
+                            aria-pressed={selectedOverviewMetric === 'completed'}
+                            onClick={() => setSelectedOverviewMetric((selected) => selected === 'completed' ? null : 'completed')}
+                            className="cursor-pointer rounded-2xl bg-emerald-500 p-4 text-left text-white shadow-sm hover:brightness-95 focus:outline-none"
+                        >
                             <div className="text-3xl font-extrabold">{completedProjects}</div>
                             <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-90">
                                 Completed
                             </div>
-                        </div>
+                        </button>
 
                         {/* Pending / Active */}
-                        <div className="rounded-2xl bg-amber-500 p-4 text-white shadow-sm">
+                        <button
+                            type="button"
+                            aria-pressed={selectedOverviewMetric === 'pending'}
+                            onClick={() => setSelectedOverviewMetric((selected) => selected === 'pending' ? null : 'pending')}
+                            className="cursor-pointer rounded-2xl bg-amber-500 p-4 text-left text-white shadow-sm hover:brightness-95 focus:outline-none"
+                        >
                             <div className="text-3xl font-extrabold">{pendingProjects}</div>
                             <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-90">
                                 Pending / Active
                             </div>
-                        </div>
+                        </button>
 
                         {/* With Delayed Step(s) */}
-                        <div className="rounded-2xl bg-rose-500 p-4 text-white shadow-sm">
+                        <button
+                            type="button"
+                            aria-pressed={selectedOverviewMetric === 'delayed'}
+                            onClick={() => setSelectedOverviewMetric((selected) => selected === 'delayed' ? null : 'delayed')}
+                            className="cursor-pointer rounded-2xl bg-rose-500 p-4 text-left text-white shadow-sm hover:brightness-95 focus:outline-none"
+                        >
                             <div className="text-3xl font-extrabold">{delayedProjectsCount}</div>
                             <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-90">
                                 With Delayed Step(s)
                             </div>
-                        </div>
+                        </button>
 
                         {/* Avg. Work Done */}
-                        <div className="rounded-2xl bg-indigo-600 p-4 text-white shadow-sm">
+                        <button
+                            type="button"
+                            aria-pressed={selectedOverviewMetric === 'average'}
+                            onClick={() => setSelectedOverviewMetric((selected) => selected === 'average' ? null : 'average')}
+                            className="cursor-pointer rounded-2xl bg-indigo-600 p-4 text-left text-white shadow-sm hover:brightness-95 focus:outline-none"
+                        >
                             <div className="text-3xl font-extrabold">{avgWorkDone}%</div>
                             <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-90">
                                 Avg. Work Done
                             </div>
-                        </div>
+                        </button>
                     </div>
 
-                    {/* Charts Row */}
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    {/* Project Details Table */}
+                    {selectedOverviewMetric ? (
+                        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+                            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                                <h3 className="text-sm font-bold text-slate-800">
+                                    {getMetricLabel(selectedOverviewMetric)}
+                                </h3>
+                                <span className="text-xs text-slate-500">
+                                    {selectedMetricProjects.length} projects
+                                </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse text-left">
+                                    <thead>
+                                        <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
+                                            <th className="px-4 py-3">Project Name</th>
+                                            <th className="px-4 py-3">Location</th>
+                                            <th className="px-4 py-3">Created At</th>
+                                            <th className="px-4 py-3">Current Pending Step / Planned Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                                        {selectedMetricProjects.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                                                    No projects match this metric.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            selectedMetricProjects.map((project) => {
+                                                const pendingStep = getCurrentPendingStep(project);
+                                                const plantName =
+                                                    project.plant === 'Other'
+                                                        ? project.plant_custom_name || 'Other'
+                                                        : project.plant || '—';
 
-                        {/* Projects by Plant */}
-                        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-                            <h3 className="text-sm font-bold text-slate-800">Projects by Plant</h3>
-                            <p className="text-xs text-slate-400">How many projects per plant</p>
-
-                            <div className="mt-6 flex flex-col items-center justify-center">
-                                {/* SVG Donut Chart */}
-                                <svg viewBox="0 0 36 36" className="h-40 w-40 transform -rotate-90">
-                                    <circle cx="18" cy="18" r="14" fill="transparent" stroke="#f1f5f9" strokeWidth="5" />
-                                    <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="14"
-                                        fill="transparent"
-                                        stroke="#0284c7"
-                                        strokeWidth="5"
-                                        strokeDasharray="40 60"
-                                        strokeDashoffset="0"
-                                    />
-                                    <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="14"
-                                        fill="transparent"
-                                        stroke="#a3e635"
-                                        strokeWidth="5"
-                                        strokeDasharray="25 75"
-                                        strokeDashoffset="-40"
-                                    />
-                                    <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="14"
-                                        fill="transparent"
-                                        stroke="#f59e0b"
-                                        strokeWidth="5"
-                                        strokeDasharray="35 65"
-                                        strokeDashoffset="-65"
-                                    />
-                                </svg>
-
-                                {/* Legend */}
-                                <div className="mt-4 flex items-center justify-center gap-4 text-xs font-medium text-slate-600">
-                                    <span className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 bg-sky-600 rounded-sm"></span> Not Set
-                                    </span>
-                                    <span className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 bg-lime-400 rounded-sm"></span> Factory
-                                    </span>
-                                    <span className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 bg-amber-500 rounded-sm"></span> HO
-                                    </span>
-                                </div>
+                                                return (
+                                                    <tr key={project.id} className="hover:bg-slate-50">
+                                                        <td className="px-4 py-3 font-semibold text-slate-800">
+                                                            {project.name}
+                                                        </td>
+                                                        <td className="px-4 py-3">{plantName}</td>
+                                                        <td className="px-4 py-3">
+                                                            {project.created_at
+                                                                ? new Date(project.created_at).toLocaleString()
+                                                                : '—'}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            {pendingStep ? (
+                                                                <>
+                                                                    <div className="font-medium text-slate-800">
+                                                                        {pendingStep.step_name}
+                                                                    </div>
+                                                                    <div className="mt-1 text-slate-500">
+                                                                        Planned: {pendingStep.planned_date || 'Not scheduled'}
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-slate-400">No pending step</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-
-                        {/* Status Breakdown */}
-                        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-                            <h3 className="text-sm font-bold text-slate-800">Status Breakdown</h3>
-                            <p className="text-xs text-slate-400">Completed vs On Track vs Delayed</p>
-
-                            <div className="mt-6 flex flex-col items-center justify-center">
-                                {/* SVG Donut Chart */}
-                                <svg viewBox="0 0 36 36" className="h-40 w-40 transform -rotate-90">
-                                    <circle cx="18" cy="18" r="14" fill="transparent" stroke="#f1f5f9" strokeWidth="5" />
-                                    <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="14"
-                                        fill="transparent"
-                                        stroke="#10b981"
-                                        strokeWidth="5"
-                                        strokeDasharray="30 70"
-                                        strokeDashoffset="0"
-                                    />
-                                    <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="14"
-                                        fill="transparent"
-                                        stroke="#0284c7"
-                                        strokeWidth="5"
-                                        strokeDasharray="35 65"
-                                        strokeDashoffset="-30"
-                                    />
-                                    <circle
-                                        cx="18"
-                                        cy="18"
-                                        r="14"
-                                        fill="transparent"
-                                        stroke="#f43f5e"
-                                        strokeWidth="5"
-                                        strokeDasharray="35 65"
-                                        strokeDashoffset="-65"
-                                    />
-                                </svg>
-
-                                {/* Legend */}
-                                <div className="mt-4 flex items-center justify-center gap-4 text-xs font-medium text-slate-600">
-                                    <span className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 bg-emerald-500 rounded-sm"></span> Completed ({completedProjects})
-                                    </span>
-                                    <span className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 bg-sky-600 rounded-sm"></span> On Track ({onTrackProjects})
-                                    </span>
-                                    <span className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 bg-rose-500 rounded-sm"></span> Delayed ({delayedProjectsCount})
-                                    </span>
-                                </div>
-                            </div>
+                    ) : (
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+                            Click an overview metric card to view its projects.
                         </div>
-                    </div>
+                    )}
 
                     {/* Work % by Owner Section */}
                     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
@@ -459,8 +688,10 @@ export default function ProjectsOverviewModal({ isOpen, onClose, projects = [] }
                     </div>
 
                     </>
-                    ) : (
+                    ) : activeTab === 'progress' ? (
                         <ProgressTrackerPanel projects={projects} />
+                    ) : (
+                        <GanttPanel projects={projects} />
                     )}
                 </div>
             </div>

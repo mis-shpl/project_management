@@ -7,6 +7,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, example="New Automation Line")
     project_date: date
     category: str
+    categories: Optional[str] = None
     plant: str
     plant_custom_name: Optional[str] = None
     owner: str
@@ -18,6 +19,7 @@ class ProjectResponse(BaseModel):
     name: str
     project_date: date
     category: str
+    categories: Optional[str] = None
     plant: str
     plant_custom_name: Optional[str] = None
     owner: str
@@ -28,20 +30,32 @@ class ProjectResponse(BaseModel):
         from_attributes = True
 
 class UpdatePlannedDateSchema(BaseModel):
+    new_start_date: Optional[date] = None
     new_planned_date: Optional[date] = None
     reason: Optional[str] = None
     contact_email: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_update(self):
-        if not self.model_fields_set.intersection({"new_planned_date", "contact_email"}):
-            raise ValueError("Provide a planned date or contact email to update")
+        if not self.model_fields_set.intersection({"new_start_date", "new_planned_date", "contact_email"}):
+            raise ValueError("Provide a start date, planned date, or contact email to update")
+        if self.new_start_date is not None and self.new_planned_date is not None:
+            if self.new_planned_date < self.new_start_date:
+                raise ValueError("Planned date cannot be before start date")
         return self
 
     
 class StepMaterialCreate(BaseModel):
     material_name: str
-    planned_date: date
+    start_date: Optional[date] = None
+    planned_date: Optional[date] = None
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.start_date is not None and self.planned_date is not None:
+            if self.planned_date < self.start_date:
+                raise ValueError("Planned date cannot be before start date")
+        return self
 
     @field_validator("material_name")
     @classmethod
@@ -54,7 +68,8 @@ class StepMaterialCreate(BaseModel):
 class StepMaterialResponse(BaseModel):
     id: int
     material_name: str
-    planned_date: date
+    start_date: Optional[date] = None
+    planned_date: Optional[date] = None
     actual_completion_date: Optional[date] = None
     is_completed: bool
     completion_remark: Optional[str] = None
@@ -75,6 +90,7 @@ class StepRevisionLogResponse(BaseModel):
 class InitialStepCreate(BaseModel):
     step_name: str
     step_order: int
+    start_date: Optional[date] = None
     planned_date: Optional[date] = None
     contact_email: Optional[str] = None
     is_na: bool = False
@@ -84,6 +100,11 @@ class InitialStepCreate(BaseModel):
     def validate_schedule(self):
         if self.is_na and self.planned_date is not None:
             raise ValueError("An N/A step cannot have a planned date")
+        if self.is_na and self.start_date is not None:
+            raise ValueError("An N/A step cannot have a start date")
+        if self.start_date is not None and self.planned_date is not None:
+            if self.planned_date < self.start_date:
+                raise ValueError("Planned date cannot be before start date")
         if self.is_na and self.materials:
             raise ValueError("An N/A step cannot have materials")
         return self
@@ -92,6 +113,7 @@ class ProjectStepResponse(BaseModel):
     id: int
     step_name: str
     step_order: int
+    start_date: Optional[date] = None
     planned_date: Optional[date] = None
     contact_email: Optional[str] = None
     is_na: bool = False

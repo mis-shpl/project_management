@@ -8,7 +8,7 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
   const [completionRemark, setCompletionRemark] = useState('');
   const [revisionsModalStep, setRevisionsModalStep] = useState(null);
   const [expandedSteps, setExpandedSteps] = useState({});
-  const [materialDraft, setMaterialDraft] = useState({ name: '', date: '' });
+  const [materialDraft, setMaterialDraft] = useState({ name: '', start_date: '', date: '' });
   const [addingMaterial, setAddingMaterial] = useState(false);
   const [materialError, setMaterialError] = useState('');
 
@@ -44,8 +44,8 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
     setAddingMaterial(true);
     setMaterialError('');
     try {
-      await addStepMaterial(step.id, materialDraft.name.trim(), materialDraft.date);
-      setMaterialDraft({ name: '', date: '' });
+      await addStepMaterial(step.id, materialDraft.name.trim(), materialDraft.date, materialDraft.start_date);
+      setMaterialDraft({ name: '', start_date: '', date: '' });
       setExpandedSteps((prev) => ({ ...prev, [step.id]: true }));
       await onRefresh();
     } catch (err) {
@@ -282,10 +282,20 @@ export default function ProjectStepsModal({ project, onClose, onRefresh }) {
                               />
                             </label>
                             <label className="text-[10px] font-semibold text-slate-600">
+                              Start date
+                              <input
+                                type="date"
+                                value={materialDraft.start_date}
+                                onChange={(e) => setMaterialDraft((draft) => ({ ...draft, start_date: e.target.value }))}
+                                className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs"
+                              />
+                            </label>
+                            <label className="text-[10px] font-semibold text-slate-600">
                               Planned date
                               <input
                                 type="date"
                                 required
+                                min={materialDraft.start_date || undefined}
                                 value={materialDraft.date}
                                 onChange={(e) => setMaterialDraft((draft) => ({ ...draft, date: e.target.value }))}
                                 className="mt-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs"

@@ -38,12 +38,7 @@ def mark_done(step_id: int, payload: MarkStepDoneSchema, db: Session = Depends(g
 def mark_material_done(material_id: int, payload: MarkStepDoneSchema, db: Session = Depends(get_db)):
     return service.mark_material_as_done(db=db, material_id=material_id, payload=payload)
 
-@router.delete("/steps/{step_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/steps/{step_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete Step in a Project")
 def delete_step(step_id: int, db: Session = Depends(get_db)):
     service.delete_project_step(db=db, step_id=step_id)
-    return None
-
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: int, db: Session = Depends(get_db)):
-    service.delete_project(db=db, project_id=project_id)
     return None

@@ -39,6 +39,7 @@ export const deleteProject = async (projectId) => {
 
 export const updatePlannedDate = async (stepId, updates) => {
     const body = {};
+    if (updates.newStartDate !== undefined) body.new_start_date = updates.newStartDate;
     if (updates.newPlannedDate !== undefined) body.new_planned_date = updates.newPlannedDate;
     if (updates.reason !== undefined) body.reason = updates.reason;
     if (updates.contactEmail !== undefined) body.contact_email = updates.contactEmail;
@@ -55,12 +56,13 @@ export const updatePlannedDate = async (stepId, updates) => {
     return response.json();
 };
 
-export const addStepMaterial = async (stepId, materialName, plannedDate) => {
+export const addStepMaterial = async (stepId, materialName, plannedDate, startDate) => {
     const response = await fetch(`${API_BASE_URL}/projects/steps/${stepId}/materials`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             material_name: materialName,
+            start_date: startDate || null,
             planned_date: plannedDate,
         }),
     });

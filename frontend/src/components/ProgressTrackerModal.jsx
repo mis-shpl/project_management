@@ -135,9 +135,9 @@ function MetricCard({ label, count, color, isSelected, onClick }) {
             aria-pressed={isSelected}
             aria-controls="progress-step-list"
             onClick={onClick}
-            className={`w-full cursor-pointer rounded-2xl p-5 text-left shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-indigo-400 ${
+            className={`w-full cursor-pointer rounded-2xl p-5 text-left shadow-sm transition hover:brightness-95 focus:outline-none ${
                 colorClasses[color]
-            } ${isSelected ? 'ring-2 ring-indigo-500' : ''}`}
+            }`}
         >
             <div className="text-3xl font-extrabold">{count}</div>
             <div className="mt-1 text-[11px] font-bold uppercase tracking-wider">{label} steps</div>

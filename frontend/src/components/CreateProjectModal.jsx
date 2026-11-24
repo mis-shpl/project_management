@@ -14,6 +14,22 @@ const CATEGORY_OPTIONS = [
     "Safety/EHS",
     "Other (type manually)"
 ];
+
+const DEPARTMENT_OPTIONS = [
+    "API 1 PLANT",
+    "API 2 PLANT",
+    "FORMULATION G1 PLANT",
+    "COMMON",
+    "PILOT PLANT",
+    "API 3 PLANT",
+    "BOILER",
+    "EHS",
+    "QC Lab",
+    "API R & D",
+    "HR",
+    "Formulation R & D"
+];
+
 const OTHER_CATEGORY = "Other (type manually)";
 
 
@@ -23,8 +39,8 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
         project_date: new Date().toISOString().split('T')[0],
         categories: [CATEGORY_OPTIONS[0]],
         category_custom_name: '',
-        plant: 'Factory',
-        plant_custom_name: '',
+        location: 'Factory',
+        department: '',
         owner: '',
     });
 
@@ -32,6 +48,7 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
         DEFAULT_WORKFLOW_STEPS.map((name, index) => ({
             step_name: name,
             step_order: index + 1,
+            start_date: '',
             planned_date: '',
             contact_email: '',
             is_na: false,
@@ -39,7 +56,7 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
         }))
     );
 
-    const [newMaterial, setNewMaterial] = useState({ name: '', date: '' });
+    const [newMaterial, setNewMaterial] = useState({ name: '', start_date: '', planned_date: '' });
     const [submitError, setSubmitError] = useState('');
     const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
     const [categoryMenuPosition, setCategoryMenuPosition] = useState(null);
@@ -90,11 +107,12 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
     const isDetailsComplete = Boolean(
         projectDetails.name.trim() &&
         projectDetails.project_date &&
+        projectDetails.location &&
+        projectDetails.department.trim() &&
         projectDetails.categories.length > 0 &&
         (!projectDetails.categories.includes(OTHER_CATEGORY) || projectDetails.category_custom_name.trim()) &&
         effectiveCategory &&
-        projectDetails.owner.trim() &&
-        (projectDetails.plant !== 'Other' || projectDetails.plant_custom_name.trim())
+        projectDetails.owner.trim()
     );
 
     const handleDetailChange = (e) => {
@@ -114,11 +132,14 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
     const handleStepDateChange = (index, value) => {
         const updated = [...stepDates];
         updated[index].planned_date = value;
+        setStepDates(updated);
+    };
 
-        for (let i = index + 1; i < updated.length; i++) {
-            if (!updated[i].is_na && updated[i].planned_date && updated[i].planned_date < value) {
-                updated[i].planned_date = '';
-            }
+    const handleStepStartDateChange = (index, value) => {
+        const updated = [...stepDates];
+        updated[index].start_date = value;
+        if (updated[index].planned_date && updated[index].planned_date < value) {
+            updated[index].planned_date = '';
         }
         setStepDates(updated);
     };
@@ -129,18 +150,21 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
         if (isNa && step.materials.length > 0) return;
 
         step.is_na = isNa;
+        step.start_date = '';
         step.planned_date = '';
         setStepDates(updated);
     };
 
     const addMaterialItem = (stepIndex) => {
-        if (!newMaterial.name.trim() || !newMaterial.date) return;
+        if (!newMaterial.name.trim()) return;
+        if (newMaterial.start_date && newMaterial.planned_date && newMaterial.planned_date < newMaterial.start_date) return;
 
         const updated = [...stepDates];
         const targetStep = updated[stepIndex];
         targetStep.materials.push({
             material_name: newMaterial.name.trim(),
-            planned_date: newMaterial.date,
+            start_date: newMaterial.start_date || '',
+            planned_date: newMaterial.planned_date || '',
         });
 
         // Set step planned_date to the maximum material date
@@ -151,7 +175,7 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
         targetStep.planned_date = maxMaterialDate;
 
         setStepDates(updated);
-        setNewMaterial({ name: '', date: '' });
+        setNewMaterial({ name: '', start_date: '', planned_date: '' });
     };
 
     const removeMaterialItem = (stepIndex, matIndex) => {
@@ -184,14 +208,20 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
         const payload = {
             name: projectDetails.name.trim(),
             project_date: projectDetails.project_date,
-            category: effectiveCategory,
-            plant: projectDetails.plant,
-            plant_custom_name:
-                projectDetails.plant === 'Other' ? projectDetails.plant_custom_name.trim() : null,
+            category: projectDetails.department.trim(),
+            categories: effectiveCategory,
+            plant: projectDetails.location,
+            plant_custom_name: null,
             owner: projectDetails.owner.trim(),
             steps: stepDates.map((step) => ({
                 ...step,
+                start_date: step.is_na || !step.start_date ? null : step.start_date,
                 planned_date: step.is_na || !step.planned_date ? null : step.planned_date,
+                materials: step.materials.map((material) => ({
+                    ...material,
+                    start_date: material.start_date || null,
+                    planned_date: material.planned_date || null,
+                })),
                 contact_email: step.step_name === 'User Clearance' ? step.contact_email.trim() || null : null,
             })),
         };
@@ -239,6 +269,42 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
                                     className="mt-1 w-full rounded-lg border border-slate-400 p-2 text-sm"
                                 />
                             </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600">Categories *</label>
+                                <div className="relative mt-1">
+                                    <button
+                                        ref={categoryButtonRef}
+                                        type="button"
+                                        aria-expanded={isCategoryMenuOpen}
+                                        aria-controls="project-category-options"
+                                        onClick={() => setIsCategoryMenuOpen((isOpen) => !isOpen)}
+                                        className="flex w-full items-center justify-between rounded-lg border border-slate-400 bg-white p-2 text-left text-sm"
+                                    >
+                                        <span className={projectDetails.categories.length ? 'text-slate-800' : 'text-slate-400'}>
+                                            {projectDetails.categories.length
+                                                ? projectDetails.categories.map((category) => (
+                                                    category === OTHER_CATEGORY && projectDetails.category_custom_name.trim()
+                                                        ? projectDetails.category_custom_name.trim()
+                                                        : category
+                                                )).join(', ')
+                                                : 'Select categories'}
+                                        </span>
+                                        <span aria-hidden="true" className="ml-2 text-slate-500">▾</span>
+                                    </button>
+                                </div>
+                                {projectDetails.categories.includes(OTHER_CATEGORY) && (
+                                    <input
+                                        type="text"
+                                        name="category_custom_name"
+                                        value={projectDetails.category_custom_name}
+                                        onChange={handleDetailChange}
+                                        placeholder="Enter category name"
+                                        aria-label="Custom category name"
+                                        required
+                                        className="mt-2 w-full rounded-lg border border-slate-400 p-2 text-sm"
+                                    />
+                                )}
+                            </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-600">Project Date *</label>
@@ -252,54 +318,35 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-600">Categories *</label>
-                                    <div className="relative mt-1">
-                                        <button
-                                            ref={categoryButtonRef}
-                                            type="button"
-                                            aria-expanded={isCategoryMenuOpen}
-                                            aria-controls="project-category-options"
-                                            onClick={() => setIsCategoryMenuOpen((isOpen) => !isOpen)}
-                                            className="flex w-full items-center justify-between rounded-lg border border-slate-400 bg-white p-2 text-left text-sm"
-                                        >
-                                            <span className={projectDetails.categories.length ? 'text-slate-800' : 'text-slate-400'}>
-                                                {projectDetails.categories.length
-                                                    ? projectDetails.categories.map((category) => (
-                                                        category === OTHER_CATEGORY && projectDetails.category_custom_name.trim()
-                                                            ? projectDetails.category_custom_name.trim()
-                                                            : category
-                                                    )).join(', ')
-                                                    : 'Select categories'}
-                                            </span>
-                                            <span aria-hidden="true" className="ml-2 text-slate-500">▾</span>
-                                        </button>
-                                    </div>
-                                    {projectDetails.categories.includes(OTHER_CATEGORY) && (
-                                        <input
-                                            type="text"
-                                            name="category_custom_name"
-                                            value={projectDetails.category_custom_name}
-                                            onChange={handleDetailChange}
-                                            placeholder="Enter category name"
-                                            aria-label="Custom category name"
-                                            required
-                                            className="mt-2 w-full rounded-lg border border-slate-400 p-2 text-sm"
-                                        />
-                                    )}
+                                    <label className="block text-xs font-semibold text-slate-600">Location *</label>
+                                    <select
+                                        name="location"
+                                        value={projectDetails.location}
+                                        onChange={handleDetailChange}
+                                        className="mt-1 w-full rounded-lg border border-slate-400 p-2 text-sm bg-white"
+                                        required
+                                    >
+                                        <option value="Factory">Factory</option>
+                                        <option value="HO">HO</option>
+                                    </select>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-600">Plant *</label>
                                     <select
-                                        name="plant"
-                                        value={projectDetails.plant}
+                                        name="department"
+                                        value={projectDetails.department}
                                         onChange={handleDetailChange}
                                         className="mt-1 w-full rounded-lg border border-slate-400 p-2 text-sm bg-white"
+                                        required
                                     >
-                                        <option value="Factory">Factory</option>
-                                        <option value="HO">HO</option>
-                                        <option value="Other">Other</option>
+                                        <option value="" disabled>Select a plant</option>
+                                        {DEPARTMENT_OPTIONS.map((department) => (
+                                            <option key={department} value={department}>
+                                                {department}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
@@ -314,159 +361,179 @@ export default function CreateProjectModal({ isOpen, onClose, onProjectCreated }
                                     />
                                 </div>
                             </div>
+
+                            {/* Step 2: Unlocked Steps */}
+                            {isDetailsComplete && (
+                                <div className="space-y-4 pt-4 border-t border-slate-100">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-600">2. Steps Schedule</h3>
+                                    <div className="divide-y divide-slate-100 border rounded-xl border-slate-400 bg-slate-50/50 p-4">
+                                        {stepDates.map((step, idx) => {
+                                            const minDate = projectDetails.project_date;
+
+                                            const isMaterialStep = step.step_name === 'Material Receiving Timeline';
+                                            const isUserClearanceStep = step.step_name === 'User Clearance';
+                                            const assignee = idx >= 8 && idx <= 10 ? 'Mr. Shrinivas' : 'Mr. Dilip / Mr. Mangesh';
+
+                                            return (
+                                                <div key={step.step_name} className={`py-3 ${step.is_na ? 'text-slate-400' : ''}`}>
+                                                    <div className="flex items-center justify-between gap-4">
+                                                        <div>
+                                                            <span className={`text-xs font-medium ${step.is_na ? 'text-slate-400' : 'text-slate-700'}`}>
+                                                                {idx + 1}. {step.step_name}
+                                                            </span>
+                                                            <span className="ml-2 text-[10px] text-slate-400">{assignee}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-3">
+                                                            <label className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-500">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={step.is_na}
+                                                                    disabled={isMaterialStep && step.materials.length > 0}
+                                                                    onChange={(e) => handleStepNaChange(idx, e.target.checked)}
+                                                                    className="rounded border-slate-400"
+                                                                />
+                                                                N/A
+                                                            </label>
+                                                            {step.is_na ? (
+                                                                <span className="rounded bg-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500">
+                                                                    N/A
+                                                                </span>
+                                                            ) : !isMaterialStep && (
+                                                                <div className="flex items-center gap-2">
+                                                                    <label className="text-[10px] text-slate-500">
+                                                                        Start
+                                                                        <input
+                                                                            type="date"
+                                                                            min={minDate}
+                                                                            value={step.start_date}
+                                                                            onChange={(e) => handleStepStartDateChange(idx, e.target.value)}
+                                                                            className="ml-1 rounded-lg border border-slate-400 bg-white px-2 py-1 text-xs text-slate-800"
+                                                                        />
+                                                                    </label>
+                                                                    <label className="text-[10px] text-slate-500">
+                                                                        End
+                                                                        <input
+                                                                            type="date"
+                                                                            min={step.start_date || minDate}
+                                                                            value={step.planned_date}
+                                                                            onChange={(e) => handleStepDateChange(idx, e.target.value)}
+                                                                            className="ml-1 rounded-lg border border-slate-400 bg-white px-2 py-1 text-xs text-slate-800"
+                                                                        />
+                                                                    </label>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {isUserClearanceStep && !step.is_na && (
+                                                        <div className="mt-2">
+                                                            <label className="block text-[11px] font-medium text-slate-500">
+                                                                User Clearance contact email
+                                                            </label>
+                                                            <input
+                                                                type="email"
+                                                                value={step.contact_email}
+                                                                onChange={(e) => {
+                                                                    const updated = [...stepDates];
+                                                                    updated[idx].contact_email = e.target.value;
+                                                                    setStepDates(updated);
+                                                                }}
+                                                                placeholder="user@example.com"
+                                                                className="mt-1 w-full rounded border border-slate-400 px-2 py-1 text-xs"
+                                                            />
+                                                        </div>
+                                                    )}
+
+                                                    {/* Special Material Receiving Nesting */}
+                                                    {isMaterialStep && !step.is_na && (
+                                                        <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/30 p-3">
+                                                            <div className="text-[11px] font-semibold text-indigo-800 mb-2">
+                                                                Add Required Materials:
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mb-3">
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="Material Name"
+                                                                    value={newMaterial.name}
+                                                                    onChange={(e) => setNewMaterial({ ...newMaterial, name: e.target.value })}
+                                                                    className="flex-1 rounded border border-slate-400 px-2 py-1 text-xs"
+                                                                />
+                                                                <label className="text-[10px] text-slate-500">
+                                                                    Start
+                                                                    <input
+                                                                        type="date"
+                                                                        min={minDate}
+                                                                        value={newMaterial.start_date}
+                                                                        onChange={(e) => setNewMaterial({ ...newMaterial, start_date: e.target.value })}
+                                                                        className="ml-1 rounded border border-slate-400 px-2 py-1 text-xs"
+                                                                    />
+                                                                </label>
+                                                                <label className="text-[10px] text-slate-500">
+                                                                    End
+                                                                    <input
+                                                                        type="date"
+                                                                        min={newMaterial.start_date || minDate}
+                                                                        value={newMaterial.planned_date}
+                                                                        onChange={(e) => setNewMaterial({ ...newMaterial, planned_date: e.target.value })}
+                                                                        className="ml-1 rounded border border-slate-400 px-2 py-1 text-xs"
+                                                                    />
+                                                                </label>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => addMaterialItem(idx)}
+                                                                    className="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white"
+                                                                >
+                                                                    + Add
+                                                                </button>
+                                                            </div>
+
+                                                            {/* List of Added Materials */}
+                                                            {step.materials.length > 0 && (
+                                                                <div className="space-y-1.5 border-t border-indigo-100 pt-2">
+                                                                    {step.materials.map((m, mIdx) => (
+                                                                        <div key={mIdx} className="flex items-center justify-between text-xs text-slate-700 bg-white p-1.5 rounded border border-slate-400">
+                                                                            <span>📦 {m.material_name}</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="font-mono text-slate-500">
+                                                                                    {m.start_date || 'Unassigned'} → {m.planned_date || 'No end'}
+                                                                                </span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => removeMaterialItem(idx, mIdx)}
+                                                                                    className="text-rose-500 hover:text-rose-700"
+                                                                                >
+                                                                                    ✕
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Step 2: Unlocked Steps */}
-                        {isDetailsComplete && (
-                            <div className="space-y-4 pt-4 border-t border-slate-100">
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-600">2. Steps Schedule</h3>
-                                <div className="divide-y divide-slate-100 border rounded-xl border-slate-400 bg-slate-50/50 p-4">
-                                    {stepDates.map((step, idx) => {
-                                        const previousScheduledStep = stepDates
-                                            .slice(0, idx)
-                                            .reverse()
-                                            .find((previousStep) => !previousStep.is_na && previousStep.planned_date);
-                                        const minDate = previousScheduledStep?.planned_date || projectDetails.project_date;
-                                        const previousStep = stepDates[idx - 1];
-                                        const isStepUnlocked = idx === 0 || previousStep.is_na || previousStep.planned_date;
-
-                                        const isMaterialStep = step.step_name === 'Material Receiving Timeline';
-                                        const isUserClearanceStep = step.step_name === 'User Clearance';
-                                        const assignee = idx >= 8 && idx <= 10 ? 'Mr. Shrinivas' : 'Mr. Dilip / Mr. Mangesh';
-
-                                        return (
-                                            <div key={step.step_name} className={`py-3 ${step.is_na ? 'text-slate-400' : ''}`}>
-                                                <div className="flex items-center justify-between gap-4">
-                                                    <div>
-                                                        <span className={`text-xs font-medium ${step.is_na ? 'text-slate-400' : 'text-slate-700'}`}>
-                                                            {idx + 1}. {step.step_name}
-                                                        </span>
-                                                        <span className="ml-2 text-[10px] text-slate-400">{assignee}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <label className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-500">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={step.is_na}
-                                                                disabled={!isStepUnlocked || (isMaterialStep && step.materials.length > 0)}
-                                                                onChange={(e) => handleStepNaChange(idx, e.target.checked)}
-                                                                className="rounded border-slate-400"
-                                                            />
-                                                            N/A
-                                                        </label>
-                                                        {step.is_na ? (
-                                                            <span className="rounded bg-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-500">
-                                                                N/A
-                                                            </span>
-                                                        ) : !isMaterialStep && (
-                                                        <input
-                                                            type="date"
-                                                            min={minDate}
-                                                            disabled={!isStepUnlocked}
-                                                            value={step.planned_date}
-                                                            onChange={(e) => handleStepDateChange(idx, e.target.value)}
-                                                            className="rounded-lg border border-slate-400 bg-white px-3 py-1 text-xs text-slate-800 disabled:bg-slate-100"
-                                                        />
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {isUserClearanceStep && !step.is_na && (
-                                                    <div className="mt-2">
-                                                        <label className="block text-[11px] font-medium text-slate-500">
-                                                            User Clearance contact email
-                                                        </label>
-                                                        <input
-                                                            type="email"
-                                                            value={step.contact_email}
-                                                            onChange={(e) => {
-                                                                const updated = [...stepDates];
-                                                                updated[idx].contact_email = e.target.value;
-                                                                setStepDates(updated);
-                                                            }}
-                                                            placeholder="user@example.com"
-                                                            disabled={!isStepUnlocked}
-                                                            className="mt-1 w-full rounded border border-slate-400 px-2 py-1 text-xs disabled:bg-slate-100"
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                {/* Special Material Receiving Nesting */}
-                                                {isMaterialStep && !step.is_na && (
-                                                    <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/30 p-3">
-                                                        <div className="text-[11px] font-semibold text-indigo-800 mb-2">
-                                                            Add Required Materials:
-                                                        </div>
-                                                        <div className="flex items-center gap-2 mb-3">
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Material Name"
-                                                                value={newMaterial.name}
-                                                                onChange={(e) => setNewMaterial({ ...newMaterial, name: e.target.value })}
-                                                                className="flex-1 rounded border border-slate-400 px-2 py-1 text-xs"
-                                                            />
-                                                            <input
-                                                                type="date"
-                                                                min={minDate}
-                                                                disabled={!isStepUnlocked}
-                                                                value={newMaterial.date}
-                                                                onChange={(e) => setNewMaterial({ ...newMaterial, date: e.target.value })}
-                                                                className="rounded border border-slate-400 px-2 py-1 text-xs"
-                                                            />
-                                                            <button
-                                                                type="button"
-                                                                disabled={!isStepUnlocked}
-                                                                onClick={() => addMaterialItem(idx)}
-                                                                className="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white"
-                                                            >
-                                                                + Add
-                                                            </button>
-                                                        </div>
-
-                                                        {/* List of Added Materials */}
-                                                        {step.materials.length > 0 && (
-                                                            <div className="space-y-1.5 border-t border-indigo-100 pt-2">
-                                                                {step.materials.map((m, mIdx) => (
-                                                                    <div key={mIdx} className="flex items-center justify-between text-xs text-slate-700 bg-white p-1.5 rounded border border-slate-400">
-                                                                        <span>📦 {m.material_name}</span>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="font-mono text-slate-500">{m.planned_date}</span>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => removeMaterialItem(idx, mIdx)}
-                                                                                className="text-rose-500 hover:text-rose-700"
-                                                                            >
-                                                                                ✕
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white cursor-pointer"
-                        >
-                            Save Progress
-                        </button>
+                        <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="rounded-lg bg-[#0AA0D3] hover:bg-[#0882AC] px-4 py-2 text-xs font-semibold text-white cursor-pointer"
+                            >
+                                Save Progress
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>

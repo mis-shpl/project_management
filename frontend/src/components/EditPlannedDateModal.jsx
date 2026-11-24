@@ -3,13 +3,16 @@ import { updatePlannedDate } from '../services/api';
 
 function EditPlannedDateModal({ step, onClose, onSuccess }) {
     const [newPlannedDate, setNewPlannedDate] = useState(step.planned_date || '');
+    const [newStartDate, setNewStartDate] = useState(step.start_date || '');
     const [contactEmail, setContactEmail] = useState(step.contact_email || '');
     const [reason, setReason] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const isUserClearanceStep = step.step_name === 'User Clearance';
-    const hasDateChanged = Boolean(newPlannedDate && newPlannedDate !== (step.planned_date || ''));
-    const requiresRevisionReason = hasDateChanged && Boolean(step.planned_date);
+    const hasPlannedDateChanged = Boolean(newPlannedDate !== (step.planned_date || ''));
+    const hasStartDateChanged = Boolean(newStartDate !== (step.start_date || ''));
+    const hasDateChanged = hasPlannedDateChanged || hasStartDateChanged;
+    const requiresRevisionReason = hasPlannedDateChanged && Boolean(step.planned_date);
     const hasEmailChanged = isUserClearanceStep && contactEmail !== (step.contact_email || '');
 
     const handleSubmit = async (e) => {
@@ -25,8 +28,9 @@ function EditPlannedDateModal({ step, onClose, onSuccess }) {
 
         try {
             const updates = {};
-            if (hasDateChanged) {
-                updates.newPlannedDate = newPlannedDate;
+            if (hasStartDateChanged) updates.newStartDate = newStartDate || null;
+            if (hasPlannedDateChanged) {
+                updates.newPlannedDate = newPlannedDate || null;
                 if (requiresRevisionReason) updates.reason = reason.trim();
             }
             if (hasEmailChanged) updates.contactEmail = contactEmail.trim();
@@ -62,9 +66,19 @@ function EditPlannedDateModal({ step, onClose, onSuccess }) {
 
                 <form onSubmit={handleSubmit} className="mt-4 space-y-4">
                     <div>
+                        <label className="block text-xs font-semibold text-slate-600">Start Date</label>
+                        <input
+                            type="date"
+                            value={newStartDate}
+                            onChange={(e) => setNewStartDate(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm"
+                        />
+                    </div>
+                    <div>
                         <label className="block text-xs font-semibold text-slate-600">New Planned Date</label>
                         <input
                             type="date"
+                            min={newStartDate || undefined}
                             value={newPlannedDate}
                             onChange={(e) => setNewPlannedDate(e.target.value)}
                             className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm"
